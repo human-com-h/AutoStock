@@ -1,0 +1,13 @@
+{
+  "name": "autostock",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:pc": "pnpm --filter web-pc dev",
+    "dev:mobile": "pnpm --filter web-mobile dev",
+    "build:pc": "pnpm --filter web-pc build",
+    "build:mobile": "pnpm --filter web-mobile build",
+    "test:shared": "pnpm --filter @autostock/shared test",
+    "lint": "pnpm -r lint"
+  }
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "name": "首次入库，原库存为0",
+    "currentQuantity": 0,
+    "currentAvgCost": 0,
+    "inQuantity": 10,
+    "inUnitCost": 500,
+    "expected": 500
+  },
+  {
+    "name": "同价格追加入库，均价不变",
+    "currentQuantity": 10,
+    "currentAvgCost": 500,
+    "inQuantity": 10,
+    "inUnitCost": 500,
+    "expected": 500
+  },
+  {
+    "name": "涨价入库，均价上移",
+    "currentQuantity": 10,
+    "currentAvgCost": 500,
+    "inQuantity": 10,
+    "inUnitCost": 700,
+    "expected": 600
+  },
+  {
+    "name": "多次波动后的精度场景：小数量+奇数单价",
+    "currentQuantity": 3,
+    "currentAvgCost": 333,
+    "inQuantity": 7,
+    "inUnitCost": 401,
+    "expected": 381
+  },
+  {
+    "name": "极小数量入库（按米/公斤计量场景）",
+    "currentQuantity": 2.5,
+    "currentAvgCost": 1200,
+    "inQuantity": 0.5,
+    "inUnitCost": 1500,
+    "expected": 1250
+  },
+  {
+    "name": "原库存为负数，本次入库后转正，均价取本次入库价",
+    "currentQuantity": -5,
+    "currentAvgCost": 800,
+    "inQuantity": 3,
+    "inUnitCost": 900,
+    "expected": 900
+  },
+  {
+    "name": "原库存为负数，入库后仍为负，均价取本次入库价",
+    "currentQuantity": -10,
+    "currentAvgCost": 800,
+    "inQuantity": 3,
+    "inUnitCost": 900,
+    "expected": 900
+  },
+  {
+    "name": "四舍五入到整数分：结果为 x.5 分向上取整",
+    "currentQuantity": 1,
+    "currentAvgCost": 100,
+    "inQuantity": 1,
+    "inUnitCost": 101,
+    "expected": 101
+  }
+]

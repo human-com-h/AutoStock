@@ -1,0 +1,4 @@
+packages:
+  - "web-pc"
+  - "web-mobile"
+  - "packages/shared"

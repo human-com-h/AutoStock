@@ -1,0 +1,25 @@
+{
+  "name": "web-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "vue-tsc -b && vite build",
+    "lint": "echo \"(no lint configured yet)\""
+  },
+  "dependencies": {
+    "vue": "3.5.40",
+    "vue-router": "5.2.0",
+    "pinia": "3.0.4",
+    "vant": "4.10.0",
+    "dexie": "4.4.4",
+    "@autostock/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "typescript": "5.9.3",
+    "vite": "8.1.5",
+    "vue-tsc": "3.3.8"
+  }
+}

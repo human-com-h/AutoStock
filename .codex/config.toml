@@ -1,0 +1,32 @@
+[mcp_servers.context7]
+command = "npx"
+args = [
+    "-y",
+    "@upstash/context7-mcp@latest",
+]
+
+[mcp_servers.context7.env]
+HTTPS_PROXY = "http://127.0.0.1:7897"
+HTTP_PROXY = "http://127.0.0.1:7897"
+
+[mcp_servers.fetch]
+command = "uvx"
+args = [
+    "mcp-server-fetch",
+    "--proxy-url",
+    "http://127.0.0.1:7897",
+]
+
+[mcp_servers.playwright]
+command = "npx"
+args = [
+    "-y",
+    "@playwright/mcp@latest",
+]
+
+[mcp_servers.sequential-thinking]
+command = "npx"
+args = [
+    "-y",
+    "@modelcontextprotocol/server-sequential-thinking@latest",
+]
