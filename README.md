@@ -37,12 +37,17 @@ cd backend
 python scripts\build_web.py
 cd backend
 python -m alembic upgrade head
+<<<<<<< HEAD
 python run_web.py
+=======
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8756
+>>>>>>> ced92c2249781ffdb87b5d6d23046e326554bc45
 ```
 
 构建后 FastAPI 会托管 PC 页面 `/` 和手机页面 `/m`。数据库默认存放在
 `%APPDATA%\AutoStock\autostock.db`；可通过 `AUTOSTOCK_DATA_DIR` 指定其他数据目录。
 
+<<<<<<< HEAD
 ## Windows 单文件打包
 
 ```powershell
@@ -54,6 +59,8 @@ python run_web.py
 服务就绪后会自动打开默认浏览器；若程序已经运行，再次点击 EXE 只会打开现有
 管理页面，不会重复启动服务。
 
+=======
+>>>>>>> ced92c2249781ffdb87b5d6d23046e326554bc45
 ## 验证
 
 ```powershell
