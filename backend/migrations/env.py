@@ -8,14 +8,17 @@ from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import settings  # noqa: E402
-from app.models import master_data, orders, stock, sync  # noqa: E402,F401
+from app.models import history, master_data, orders, stock, sync  # noqa: E402,F401
 from app.models.base import Base  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 settings.data_dir.mkdir(parents=True, exist_ok=True)
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option(
+    "sqlalchemy.url",
+    config.attributes.get("database_url_override") or settings.database_url,
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

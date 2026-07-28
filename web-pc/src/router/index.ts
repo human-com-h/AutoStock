@@ -12,6 +12,7 @@ export default createRouter({
     { path: "/stock-takes", redirect: { path: "/inventory", query: { tab: "takes" } } },
     { path: "/reports", component: () => import("../views/ReportsView.vue"), meta: { title: "报表中心" } },
     { path: "/sync", component: () => import("../views/SyncView.vue"), meta: { title: "设备与同步" } },
+    { path: "/data-safety", component: () => import("../views/DataSafetyView.vue"), meta: { title: "数据安全" } },
     { path: "/settings", component: () => import("../views/SettingsView.vue"), meta: { title: "系统设置" } },
   ],
 });

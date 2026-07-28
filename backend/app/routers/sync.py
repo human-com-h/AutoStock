@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.errors import success_body
+from app.core.errors import BusinessAppError, success_body
 from app.core.security import require_auth, require_device_auth
 from app.db.session import get_db
 from app.models.sync import Device
 from app.schemas.sync import ConflictResolve, DeviceUpdate, SyncPush
-from app.services import sync_service
+from app.services import backup_service, sync_service
 
 router = APIRouter(tags=["sync"])
 
@@ -19,6 +21,17 @@ def push(
     device: Device = Depends(require_device_auth),
     db: Session = Depends(get_db),
 ):
+    try:
+        backup_service.create_backup(
+            "pre_sync",
+            label=f"设备 {device.name or device.id} 同步前",
+            reason=f"before_sync:{device.id}",
+        )
+    except (ValueError, OSError, sqlite3.DatabaseError) as exc:
+        raise BusinessAppError(
+            f"同步前保护点创建失败，已取消本次同步：{exc}",
+            code="BUSINESS_PRE_SYNC_BACKUP_FAILED",
+        ) from exc
     return success_body(
         data=sync_service.push_changes(
             db,

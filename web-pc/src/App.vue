@@ -4,6 +4,7 @@ import {
   Collection,
   Connection,
   DataAnalysis,
+  Files,
   Document,
   HomeFilled,
   Sell,
@@ -19,6 +20,7 @@ const nav = [
   ["/inventory", "库存管理", Box],
   ["/reports", "报表中心", DataAnalysis],
   ["/sync", "设备与同步", Connection],
+  ["/data-safety", "数据安全", Files],
   ["/settings", "系统设置", Setting],
 ];
 </script>

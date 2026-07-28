@@ -2,3 +2,14 @@ packages:
   - "web-pc"
   - "web-mobile"
   - "packages/shared"
+
+allowBuilds:
+  "esbuild@0.28.1": true
+
+# pnpm 11 默认拒绝安装发布未满 24 小时的依赖。以下版本已在锁文件中
+# 审核并固定，仅豁免这三个精确版本，避免关闭整个供应链保护。
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - "baseline-browser-mapping@2.11.5"
+  - "electron-to-chromium@1.5.397"
+  - "minimatch@10.2.6"

@@ -13,6 +13,7 @@ from app.core.time import business_date_str
 from app.db.write_helpers import DEFAULT_DEVICE_ID, new_row_kwargs
 from app.models.master_data import Part
 from app.models.orders import PurchaseItem, PurchaseOrder, SalesItem, SalesOrder
+from app.services.history_service import add_history
 from app.services.order_no_service import generate_order_no
 from app.services.settings_service import get_allow_negative_stock
 from app.services.stock_service import append_ledger_entry, check_available_stock
@@ -91,6 +92,19 @@ def create_purchase_order(
         total_amount += amount
 
     order.total_amount = total_amount
+    add_history(
+        db,
+        action="create",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        entity_label=order.order_no,
+        summary=f"新建采购单「{order.order_no}」，金额 {total_amount / 100:.2f} 元",
+        after={
+            "order_no": order.order_no,
+            "order_type": order.order_type,
+            "total_amount": total_amount,
+        },
+    )
     db.commit()
     db.refresh(order)
     return order
@@ -168,6 +182,19 @@ def create_sales_order(
         total_amount += amount
 
     order.total_amount = total_amount
+    add_history(
+        db,
+        action="create",
+        entity_type="sales_order",
+        entity_id=order.id,
+        entity_label=order.order_no,
+        summary=f"新建销售单「{order.order_no}」，金额 {total_amount / 100:.2f} 元",
+        after={
+            "order_no": order.order_no,
+            "order_type": order.order_type,
+            "total_amount": total_amount,
+        },
+    )
     db.commit()
     db.refresh(order)
     return order
@@ -311,6 +338,19 @@ def create_purchase_return(
         total_amount += amount
 
     return_order.total_amount = total_amount
+    add_history(
+        db,
+        action="return",
+        entity_type="purchase_order",
+        entity_id=return_order.id,
+        entity_label=return_order.order_no,
+        summary=f"采购退货「{return_order.order_no}」，来源 {source.order_no}",
+        after={
+            "order_no": return_order.order_no,
+            "source_order_id": source.id,
+            "total_amount": total_amount,
+        },
+    )
     db.commit()
     db.refresh(return_order)
     return return_order
@@ -401,6 +441,19 @@ def create_sales_return(
         total_amount += amount
 
     return_order.total_amount = total_amount
+    add_history(
+        db,
+        action="return",
+        entity_type="sales_order",
+        entity_id=return_order.id,
+        entity_label=return_order.order_no,
+        summary=f"销售退货「{return_order.order_no}」，来源 {source.order_no}",
+        after={
+            "order_no": return_order.order_no,
+            "source_order_id": source.id,
+            "total_amount": total_amount,
+        },
+    )
     db.commit()
     db.refresh(return_order)
     return return_order
@@ -441,6 +494,15 @@ def _delete_purchase_order_and_rollback(db: Session, order: PurchaseOrder) -> Pu
         )
         item.is_deleted = 1
     order.is_deleted = 1
+    add_history(
+        db,
+        action="void",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        entity_label=order.order_no,
+        summary=f"撤销当日未同步采购单「{order.order_no}」",
+        after={"order_no": order.order_no, "is_deleted": 1},
+    )
     db.commit()
     db.refresh(order)
     return order
@@ -491,6 +553,15 @@ def _reverse_purchase_order(db: Session, order: PurchaseOrder) -> PurchaseOrder:
         )
 
     order.reversed_by = reversal.id
+    add_history(
+        db,
+        action="reverse",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        entity_label=order.order_no,
+        summary=f"红冲采购单「{order.order_no}」，生成 {reversal.order_no}",
+        after={"order_no": order.order_no, "reversed_by": reversal.id},
+    )
     db.commit()
     db.refresh(order)
     return order
@@ -524,6 +595,15 @@ def _delete_sales_order_and_rollback(db: Session, order: SalesOrder) -> SalesOrd
         )
         item.is_deleted = 1
     order.is_deleted = 1
+    add_history(
+        db,
+        action="void",
+        entity_type="sales_order",
+        entity_id=order.id,
+        entity_label=order.order_no,
+        summary=f"撤销当日未同步销售单「{order.order_no}」",
+        after={"order_no": order.order_no, "is_deleted": 1},
+    )
     db.commit()
     db.refresh(order)
     return order
@@ -578,6 +658,15 @@ def _reverse_sales_order(db: Session, order: SalesOrder) -> SalesOrder:
         )
 
     order.reversed_by = reversal.id
+    add_history(
+        db,
+        action="reverse",
+        entity_type="sales_order",
+        entity_id=order.id,
+        entity_label=order.order_no,
+        summary=f"红冲销售单「{order.order_no}」，生成 {reversal.order_no}",
+        after={"order_no": order.order_no, "reversed_by": reversal.id},
+    )
     db.commit()
     db.refresh(order)
     return order

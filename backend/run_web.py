@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import ssl
 import sys
 import threading
@@ -18,6 +19,7 @@ from app.core.certs import ensure_certificates
 from app.core.config import settings
 from app.main import app as main_app
 from app.redirect_app import app as redirect_app
+from app.services import backup_service
 
 LOCAL_URL = f"https://127.0.0.1:{settings.port_https}"
 HEALTH_URL = f"{LOCAL_URL}/api/health"
@@ -86,6 +88,10 @@ def main() -> None:
         return
 
     _run_migrations()
+    try:
+        backup_service.ensure_daily_backup()
+    except (OSError, ValueError, sqlite3.DatabaseError) as exc:
+        print(f"每日自动还原点创建失败：{exc}", file=sys.stderr)
     bundle = ensure_certificates()
     redirect_thread = threading.Thread(target=_run_redirect_server, daemon=True)
     redirect_thread.start()

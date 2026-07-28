@@ -10,6 +10,7 @@ from app.core.pinyin import pinyin_initials
 from app.db.write_helpers import bump_version, new_row_kwargs
 from app.models.master_data import Part
 from app.models.stock import StockLedger
+from app.services.history_service import ENTITY_CONFIG, add_master_history, snapshot_row
 
 OE_SEPARATOR = ","
 
@@ -36,6 +37,14 @@ def create_part(db: Session, **fields) -> Part:
     fields["oe_number"] = _normalize_oe_number(fields.get("oe_number"))
     row = Part(**fields, pinyin=pinyin_initials(fields["name"]), **new_row_kwargs(db))
     db.add(row)
+    add_master_history(
+        db,
+        action="create",
+        entity_type="part",
+        row=row,
+        before=None,
+        summary=f"新建零件「{row.part_number} {row.name}」",
+    )
     db.commit()
     return row
 
@@ -44,6 +53,7 @@ def update_part(db: Session, part_id: str, **fields) -> Part:
     row = db.get(Part, part_id)
     if row is None or row.is_deleted:
         raise BusinessAppError("零件不存在", code="BUSINESS_NOT_FOUND")
+    before = snapshot_row(row, ENTITY_CONFIG["part"][1])
     new_part_number = fields.get("part_number")
     if new_part_number is not None and new_part_number != row.part_number:
         _check_part_number_unique(db, new_part_number, exclude_id=part_id)
@@ -55,6 +65,14 @@ def update_part(db: Session, part_id: str, **fields) -> Part:
     if "name" in fields and fields["name"] is not None:
         row.pinyin = pinyin_initials(row.name)
     bump_version(db, row)
+    add_master_history(
+        db,
+        action="update",
+        entity_type="part",
+        row=row,
+        before=before,
+        summary=f"修改零件「{row.part_number} {row.name}」",
+    )
     db.commit()
     return row
 
@@ -69,13 +87,30 @@ def delete_part(db: Session, part_id: str) -> Part:
     row = db.get(Part, part_id)
     if row is None or row.is_deleted:
         raise BusinessAppError("零件不存在", code="BUSINESS_NOT_FOUND")
+    before = snapshot_row(row, ENTITY_CONFIG["part"][1])
     if _has_ledger_history(db, part_id):
         row.is_active = 0
         bump_version(db, row)
+        add_master_history(
+            db,
+            action="deactivate",
+            entity_type="part",
+            row=row,
+            before=before,
+            summary=f"停用零件「{row.part_number} {row.name}」",
+        )
         db.commit()
         return row
     row.is_deleted = 1
     bump_version(db, row)
+    add_master_history(
+        db,
+        action="delete",
+        entity_type="part",
+        row=row,
+        before=before,
+        summary=f"删除零件「{row.part_number} {row.name}」",
+    )
     db.commit()
     return row
 
