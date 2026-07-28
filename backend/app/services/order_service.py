@@ -173,13 +173,18 @@ def create_sales_order(
     return order
 
 
-def list_purchase_orders(db: Session, limit: int = 100) -> list[PurchaseOrder]:
+def list_purchase_orders(
+    db: Session,
+    limit: int = 100,
+    supplier_id: str | None = None,
+) -> list[PurchaseOrder]:
     stmt = (
         select(PurchaseOrder)
         .where(PurchaseOrder.is_deleted == 0)
-        .order_by(PurchaseOrder.created_at.desc())
-        .limit(limit)
     )
+    if supplier_id:
+        stmt = stmt.where(PurchaseOrder.supplier_id == supplier_id)
+    stmt = stmt.order_by(PurchaseOrder.created_at.desc()).limit(limit)
     return list(db.execute(stmt).scalars())
 
 
@@ -190,13 +195,18 @@ def get_purchase_order(db: Session, order_id: str) -> PurchaseOrder:
     return order
 
 
-def list_sales_orders(db: Session, limit: int = 100) -> list[SalesOrder]:
+def list_sales_orders(
+    db: Session,
+    limit: int = 100,
+    customer_id: str | None = None,
+) -> list[SalesOrder]:
     stmt = (
         select(SalesOrder)
         .where(SalesOrder.is_deleted == 0)
-        .order_by(SalesOrder.created_at.desc())
-        .limit(limit)
     )
+    if customer_id:
+        stmt = stmt.where(SalesOrder.customer_id == customer_id)
+    stmt = stmt.order_by(SalesOrder.created_at.desc()).limit(limit)
     return list(db.execute(stmt).scalars())
 
 

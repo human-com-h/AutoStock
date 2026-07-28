@@ -2,6 +2,7 @@
 import * as echarts from "echarts";
 import { computed, nextTick, onMounted, ref } from "vue";
 import { http } from "../api";
+import { orderTypeLabel } from "../utils/order";
 
 const alerts = ref<any[]>([]);
 const sales = ref<any[]>([]);
@@ -48,7 +49,7 @@ onMounted(async () => {
       <el-table-column prop="quantity" label="当前库存"/><el-table-column label="预警类型"><template #default="{row}">{{ row.alerts.join(" / ") }}</template></el-table-column>
     </el-table></section>
     <section class="panel"><h3>最近单据</h3><el-table :data="[...sales,...purchases].sort((a,b)=>b.created_at?.localeCompare(a.created_at)).slice(0,6)">
-      <el-table-column prop="order_type" label="类型"/><el-table-column prop="order_no" label="单据编号"/>
+      <el-table-column label="业务类型"><template #default="{row}">{{ orderTypeLabel(row.order_type) }}</template></el-table-column><el-table-column prop="order_no" label="单据编号"/>
       <el-table-column prop="order_date" label="日期"/><el-table-column label="金额"><template #default="{row}">{{ money(row.total_amount) }}</template></el-table-column>
     </el-table></section>
   </div>

@@ -153,3 +153,51 @@ def test_historical_order_void_generates_reversal_order(app_client):
     assert len(reversals) == 1
     assert reversals[0]["order_type"] == "purchase_return"
     assert _snapshot(app_client, part["id"]) == Decimal("0")
+
+
+def test_order_lists_can_be_filtered_by_supplier_and_customer(app_client):
+    part = _create_part(app_client, "PARTNER-001")
+    supplier_a = app_client.post("/api/suppliers", json={"name": "甲供应商"}).json()["data"]
+    supplier_b = app_client.post("/api/suppliers", json={"name": "乙供应商"}).json()["data"]
+    customer_a = app_client.post(
+        "/api/customers",
+        json={"name": "甲客户", "location": "城北"},
+    ).json()["data"]
+    customer_b = app_client.post(
+        "/api/customers",
+        json={"name": "乙客户", "location": "城南"},
+    ).json()["data"]
+
+    for supplier in (supplier_a, supplier_b):
+        response = app_client.post(
+            "/api/orders/purchases",
+            json={
+                "supplier_id": supplier["id"],
+                "items": [{"part_id": part["id"], "quantity": 5, "purchase_price": 500}],
+            },
+        )
+        assert response.status_code == 200
+
+    for customer in (customer_a, customer_b):
+        response = app_client.post(
+            "/api/orders/sales",
+            json={
+                "customer_id": customer["id"],
+                "items": [{"part_id": part["id"], "quantity": 1, "sale_price": 800}],
+            },
+        )
+        assert response.status_code == 200
+
+    purchases = app_client.get(
+        "/api/orders/purchases",
+        params={"supplier_id": supplier_a["id"], "limit": 500},
+    ).json()["data"]
+    assert len(purchases) == 1
+    assert purchases[0]["supplier_id"] == supplier_a["id"]
+
+    sales = app_client.get(
+        "/api/orders/sales",
+        params={"customer_id": customer_b["id"], "limit": 500},
+    ).json()["data"]
+    assert len(sales) == 1
+    assert sales[0]["customer_id"] == customer_b["id"]

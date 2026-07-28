@@ -14,6 +14,18 @@ from app.models.stock import StockLedger
 from app.services.part_service import create_part, search_parts
 from app.services.stock_service import append_ledger_entry, list_inventory
 
+_ORDER_TYPE_LABELS = {
+    "purchase": "采购入库",
+    "purchase_return": "采购退货",
+    "sale": "销售出库",
+    "sale_return": "销售退货",
+}
+
+
+def _order_type_label(value: str) -> str:
+    return _ORDER_TYPE_LABELS.get(value, "其他业务")
+
+
 PART_HEADERS = [
     "零件编号",
     "OE号",
@@ -127,7 +139,7 @@ def export_orders(db: Session, kind: str) -> bytes:
                 [
                     order.order_no,
                     order.order_date,
-                    order.order_type,
+                    _order_type_label(order.order_type),
                     part.part_number,
                     part.name,
                     float(item.quantity),
@@ -164,7 +176,7 @@ def export_orders(db: Session, kind: str) -> bytes:
                 [
                     order.order_no,
                     order.order_date,
-                    order.order_type,
+                    _order_type_label(order.order_type),
                     order.customer_name,
                     part.part_number,
                     part.name,

@@ -79,12 +79,14 @@ class SupplierOut(BaseModel):
 class CustomerCreate(BaseModel):
     name: str = Field(min_length=1)
     phone: str | None = None
+    location: str | None = None
     remark: str | None = None
 
 
 class CustomerUpdate(BaseModel):
     name: str | None = None
     phone: str | None = None
+    location: str | None = None
     remark: str | None = None
     is_active: int | None = None
 
@@ -93,6 +95,7 @@ class CustomerOut(BaseModel):
     id: str
     name: str
     phone: str | None
+    location: str | None
     remark: str | None
     is_active: int
 

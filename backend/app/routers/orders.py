@@ -60,9 +60,13 @@ def _sales_out(db: Session, order) -> dict:
 @router.get("/purchases")
 def list_purchases(
     limit: int = Query(default=100, ge=1, le=500),
+    supplier_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    rows = [_purchase_out(db, row) for row in svc.list_purchase_orders(db, limit)]
+    rows = [
+        _purchase_out(db, row)
+        for row in svc.list_purchase_orders(db, limit, supplier_id=supplier_id)
+    ]
     return success_body(data=rows)
 
 
@@ -105,9 +109,11 @@ def void_purchase(order_id: str, db: Session = Depends(get_db)):
 @router.get("/sales")
 def list_sales(
     limit: int = Query(default=100, ge=1, le=500),
+    customer_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    return success_body(data=[_sales_out(db, row) for row in svc.list_sales_orders(db, limit)])
+    rows = svc.list_sales_orders(db, limit, customer_id=customer_id)
+    return success_body(data=[_sales_out(db, row) for row in rows])
 
 
 @router.post("/sales")

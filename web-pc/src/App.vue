@@ -5,9 +5,7 @@ import {
   Connection,
   DataAnalysis,
   Document,
-  Goods,
   HomeFilled,
-  Operation,
   Sell,
   Setting,
   ShoppingCart,
@@ -15,12 +13,10 @@ import {
 
 const nav = [
   ["/", "经营概览", HomeFilled],
-  ["/parts", "零件档案", Goods],
   ["/master-data", "基础资料", Collection],
   ["/purchase", "采购入库", ShoppingCart],
   ["/sales", "销售出库", Sell],
-  ["/inventory", "库存查询", Box],
-  ["/stock-takes", "库存盘点", Operation],
+  ["/inventory", "库存管理", Box],
   ["/reports", "报表中心", DataAnalysis],
   ["/sync", "设备与同步", Connection],
   ["/settings", "系统设置", Setting],

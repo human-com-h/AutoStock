@@ -41,6 +41,7 @@ class Customer(BusinessMixin, Base):
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    location: Mapped[str | None] = mapped_column(String, nullable=True)
     remark: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 

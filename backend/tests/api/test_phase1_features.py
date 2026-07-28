@@ -144,6 +144,11 @@ def test_order_ledger_and_summary_exports(app_client):
     assert all(response.status_code == 200 for response in exports.values())
     assert all(response.content[:2] == b"PK" for response in exports.values())
 
+    purchase_export = load_workbook(BytesIO(exports["purchase"].content)).active
+    sales_export = load_workbook(BytesIO(exports["sales"].content)).active
+    assert purchase_export["C2"].value == "采购入库"
+    assert sales_export["C2"].value == "销售出库"
+
     summary = load_workbook(BytesIO(exports["summary"].content)).active
     assert summary["A2"].value == part["part_number"]
     assert summary["D2"].value == 10

@@ -52,3 +52,24 @@ def test_update_nonexistent_returns_business_not_found(app_client):
     resp = app_client.put("/api/categories/does-not-exist", json={"name": "x"})
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "BUSINESS_NOT_FOUND"
+
+
+def test_customer_location_can_be_created_updated_and_listed(app_client):
+    created = app_client.post(
+        "/api/customers",
+        json={"name": "城北修理厂", "phone": "13800000001", "location": "城北"},
+    )
+    assert created.status_code == 200
+    customer = created.json()["data"]
+    assert customer["location"] == "城北"
+
+    updated = app_client.put(
+        f"/api/customers/{customer['id']}",
+        json={"location": "开发区"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["data"]["location"] == "开发区"
+
+    listed = app_client.get("/api/customers").json()["data"]
+    matched = next(row for row in listed if row["id"] == customer["id"])
+    assert matched["location"] == "开发区"

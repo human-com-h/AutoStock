@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { http } from "../api";
+import { orderTypeLabel } from "../utils/order";
 
 const route = useRoute();
 const parts = ref<any[]>([]);
@@ -12,6 +13,7 @@ const partnerId = ref("");
 const customerName = ref("");
 const lines = ref<any[]>([]);
 const returnDialog = ref(false);
+const submitting = ref(false);
 const returning = reactive<any>({ id:"", order_no:"", items:[] });
 const purchase = computed(() => route.meta.kind === "purchase");
 const title = computed(() => purchase.value ? "采购入库" : "销售出库");
@@ -41,11 +43,36 @@ async function submit() {
     part_id:row.part_id, quantity:row.quantity,
     [purchase.value?"purchase_price":"sale_price"]:row.price,
   }));
+  if (!items.length) {
+    ElMessage.warning("请至少选择一个零件");
+    return;
+  }
+  if (items.some(item=>!Number.isFinite(item.quantity)||item.quantity<=0)) {
+    ElMessage.warning("零件数量必须大于 0");
+    return;
+  }
+  const priceKey=purchase.value?"purchase_price":"sale_price";
+  if (items.some(item=>!Number.isInteger(item[priceKey])||item[priceKey]<0)) {
+    ElMessage.warning(`${purchase.value?"进价":"售价"}必须是大于等于 0 的整数分`);
+    return;
+  }
+  if (new Set(items.map(item=>item.part_id)).size!==items.length) {
+    ElMessage.warning("同一个零件不能重复添加，请合并数量");
+    return;
+  }
   const payload:any={items};
   if(purchase.value) payload.supplier_id=partnerId.value||undefined;
   else {payload.customer_id=partnerId.value||undefined;payload.customer_name=customerName.value||undefined;}
-  await http.post(purchase.value?"/orders/purchases":"/orders/sales",payload);
-  ElMessage.success(`${title.value}单已保存并过账`); await load();
+  submitting.value=true;
+  try {
+    await http.post(purchase.value?"/orders/purchases":"/orders/sales",payload);
+    ElMessage.success(`${title.value}单已保存并过账`);
+    await load();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : `${title.value}单保存失败`);
+  } finally {
+    submitting.value=false;
+  }
 }
 async function voidOrder(row:any) {
   await ElMessageBox.confirm(`确定撤销/红冲单据 ${row.order_no}？`,"确认操作",{type:"warning"});
@@ -66,7 +93,7 @@ watch(()=>route.meta.kind,load); onMounted(load);
 </script>
 <template>
   <div class="panel order-form">
-    <div class="page-actions"><h3>新建{{title}}单</h3><el-button type="primary" @click="submit">保存并过账</el-button></div>
+    <div class="page-actions"><h3>新建{{title}}单</h3><el-button type="primary" :loading="submitting" @click="submit">保存并过账</el-button></div>
     <div class="partner-row">
       <el-select v-model="partnerId" filterable clearable :placeholder="purchase?'选择供应商（可选）':'选择客户（可选）'" style="width:300px">
         <el-option v-for="row in partners" :key="row.id" :label="row.name" :value="row.id"/>
@@ -83,7 +110,7 @@ watch(()=>route.meta.kind,load); onMounted(load);
     </el-table><el-button style="margin-top:12px" @click="add">添加一行</el-button>
   </div>
   <div class="panel" style="margin-top:18px"><div class="page-actions"><h3>最近{{title}}单</h3><el-button @click="exportOrders">导出明细</el-button></div><el-table :data="orders">
-    <el-table-column prop="order_no" label="单号"/><el-table-column prop="order_date" label="日期"/><el-table-column prop="order_type" label="类型"/>
+    <el-table-column prop="order_no" label="单号"/><el-table-column prop="order_date" label="日期"/><el-table-column label="业务类型"><template #default="{row}">{{ orderTypeLabel(row.order_type) }}</template></el-table-column>
     <el-table-column label="金额"><template #default="{row}">¥ {{(row.total_amount/100).toFixed(2)}}</template></el-table-column>
     <el-table-column label="操作" width="150"><template #default="{row}"><el-button v-if="!row.source_order_id&&!row.reversed_by" link type="primary" @click="openReturn(row)">退货</el-button><el-button v-if="!row.reversed_by" link type="danger" @click="voidOrder(row)">撤销/红冲</el-button></template></el-table-column>
   </el-table></div>
