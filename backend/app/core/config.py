@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     session_cookie_name: str = "autostock_session"
     session_max_age_days: int = 30
     localhost_auto_login: bool = True
+    open_browser_on_start: bool = True
 
     @property
     def db_path(self) -> Path:

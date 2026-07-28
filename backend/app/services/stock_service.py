@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import BusinessAppError
 from app.core.money import round_half_up
 from app.db.write_helpers import new_row_kwargs
 from app.models.stock import StockLedger, StockSnapshot
+from app.sync.change_seq import next_rev
 
 ALL_CHANGE_TYPES = frozenset(
     {"purchase", "sale", "purchase_return", "sale_return", "adjust", "opening"}
@@ -58,6 +59,7 @@ def append_ledger_entry(
     unit_cost: int | None = None,
     remark: str | None = None,
     occurred_at: str | None = None,
+    external_row: dict | None = None,
 ) -> StockLedger | None:
     """写入一条库存流水并同步更新快照，全程在调用方事务内完成（§4.4、§12）。
 
@@ -100,6 +102,19 @@ def append_ledger_entry(
     snapshot.quantity = Decimal(str(snapshot.quantity)) + quantity
     snapshot.calc_rev += 1
 
+    if external_row is None:
+        common_fields = new_row_kwargs(db)
+    else:
+        common_fields = {
+            "id": external_row["id"],
+            "created_at": external_row.get("created_at") or datetime.now(UTC).isoformat(),
+            "updated_at": external_row.get("updated_at") or datetime.now(UTC).isoformat(),
+            "rev": next_rev(db),
+            "version": max(1, int(external_row.get("version", 1))),
+            "device_id": external_row["device_id"],
+            "is_deleted": 0,
+        }
+
     ledger = StockLedger(
         part_id=part_id,
         change_type=change_type,
@@ -109,7 +124,7 @@ def append_ledger_entry(
         source_id=source_id,
         occurred_at=occurred_at or datetime.now(UTC).isoformat(),
         remark=remark,
-        **new_row_kwargs(db),
+        **common_fields,
     )
     db.add(ledger)
     db.flush()
@@ -173,6 +188,53 @@ def recalculate_all(db: Session) -> None:
         snapshot.last_out_at = last_out_at
         snapshot.calc_rev += 1
     db.commit()
+
+
+def reconcile_inventory(db: Session) -> dict:
+    """只读比对库存快照与流水汇总，不自动修改任何业务数据。"""
+    ledger_totals = {
+        part_id: Decimal(str(quantity or 0))
+        for part_id, quantity in db.execute(
+            select(StockLedger.part_id, func.sum(StockLedger.quantity)).group_by(
+                StockLedger.part_id
+            )
+        )
+    }
+    snapshots = {
+        row.part_id: Decimal(str(row.quantity))
+        for row in db.execute(select(StockSnapshot)).scalars()
+    }
+    part_ids = sorted(set(ledger_totals) | set(snapshots))
+
+    from app.models.master_data import Part
+
+    part_rows = {
+        row.id: row
+        for row in db.execute(select(Part).where(Part.id.in_(part_ids))).scalars()
+    } if part_ids else {}
+    differences = []
+    for part_id in part_ids:
+        ledger_quantity = ledger_totals.get(part_id, Decimal("0"))
+        snapshot_quantity = snapshots.get(part_id, Decimal("0"))
+        if ledger_quantity == snapshot_quantity:
+            continue
+        part = part_rows.get(part_id)
+        differences.append(
+            {
+                "part_id": part_id,
+                "part_number": part.part_number if part else "",
+                "name": part.name if part else "未知零件",
+                "ledger_quantity": float(ledger_quantity),
+                "snapshot_quantity": float(snapshot_quantity),
+                "difference": float(snapshot_quantity - ledger_quantity),
+            }
+        )
+    return {
+        "ok": not differences,
+        "checked_count": len(part_ids),
+        "mismatch_count": len(differences),
+        "differences": differences,
+    }
 
 
 def list_inventory(

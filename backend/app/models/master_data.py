@@ -54,7 +54,7 @@ class Part(BusinessMixin, Base):
         Index("ix_part_category_brand", "category_id", "brand_id"),
     )
 
-    part_number: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    part_number: Mapped[str] = mapped_column(String, nullable=False)
     oe_number: Mapped[str | None] = mapped_column(String, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     spec: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -71,3 +71,4 @@ class Part(BusinessMixin, Base):
     pinyin: Mapped[str | None] = mapped_column(String, nullable=True)
     remark: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    merged_into: Mapped[str | None] = mapped_column(String(26), nullable=True)

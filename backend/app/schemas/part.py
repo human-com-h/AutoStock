@@ -61,5 +61,6 @@ class PartOut(BaseModel):
     pinyin: str | None
     remark: str | None
     is_active: int
+    merged_into: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -15,7 +15,7 @@
 | 手机前端 | Vue3 + TypeScript + Vant + Pinia + Dexie（IndexedDB）+ Workbox PWA |
 | 数据库 | SQLite（WAL 模式），迁移用 Alembic |
 | 共享代码 | `packages/shared`（TS 类型 + 业务规则纯函数 + 两端共用测试用例） |
-| 打包 | PyInstaller（后端单 exe，内嵌 uvicorn 与两个前端静态资源） |
+| 部署 | uvicorn 运行 FastAPI，Vue 前端构建为静态资源 |
 
 ## 不可违反的核心约定
 
@@ -71,7 +71,7 @@
 - PC 前端：`cd web-pc && pnpm dev`
 - 手机前端：`cd web-mobile && pnpm dev`
 - 一致性对账：`cd backend && python -m scripts.reconcile`
-- 打包 exe：`python scripts/build_exe.py`
+- Web 生产构建：`python scripts/build_web.py`
 
 ## 参考文档
 

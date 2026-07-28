@@ -14,6 +14,7 @@ from app.models.base import Base  # noqa: E402
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+settings.data_dir.mkdir(parents=True, exist_ok=True)
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
