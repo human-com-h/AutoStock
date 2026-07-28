@@ -38,6 +38,11 @@ def list_alerts(db: Session = Depends(get_db)):
     return success_body(data=svc.list_snapshots_with_alerts(db))
 
 
+@router.get("/reconcile")
+def reconcile(db: Session = Depends(get_db)):
+    return success_body(data=svc.reconcile_inventory(db))
+
+
 @router.get("/{part_id}")
 def get_snapshot(part_id: str, db: Session = Depends(get_db)):
     row = svc.get_snapshot(db, part_id)

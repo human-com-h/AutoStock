@@ -10,6 +10,7 @@ __pycache__/
 node_modules/
 dist/
 .vite/
+backend/app/static/
 
 # Data & secrets
 certs/

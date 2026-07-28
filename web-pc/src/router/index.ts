@@ -1,10 +1,11 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHashHistory } from "vue-router";
 
 export default createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     { path: "/", component: () => import("../views/HomeView.vue"), meta: { title: "经营概览" } },
     { path: "/parts", component: () => import("../views/PartsView.vue"), meta: { title: "零件档案" } },
+    { path: "/master-data", component: () => import("../views/MasterDataView.vue"), meta: { title: "基础资料" } },
     { path: "/purchase", component: () => import("../views/OrderView.vue"), meta: { title: "采购入库", kind: "purchase" } },
     { path: "/sales", component: () => import("../views/OrderView.vue"), meta: { title: "销售出库", kind: "sale" } },
     { path: "/inventory", component: () => import("../views/InventoryView.vue"), meta: { title: "库存查询" } },

@@ -122,3 +122,34 @@ def test_same_day_void_uses_compensating_ledger_and_restores_stock(app_client):
     assert _snapshot(app_client, part["id"]) == Decimal("6")
     assert app_client.post(f"/api/orders/purchases/{purchase['id']}/void").status_code == 200
     assert _snapshot(app_client, part["id"]) == Decimal("0")
+
+
+def test_historical_order_void_generates_reversal_order(app_client):
+    part = _create_part(app_client)
+    purchase = app_client.post(
+        "/api/orders/purchases",
+        json={
+            "items": [{"part_id": part["id"], "quantity": 5, "purchase_price": 500}]
+        },
+    ).json()["data"]
+
+    from app.db.session import SessionLocal
+    from app.models.orders import PurchaseOrder
+
+    with SessionLocal() as db:
+        row = db.get(PurchaseOrder, purchase["id"])
+        row.order_date = "2026-01-01"
+        db.commit()
+
+    response = app_client.post(f"/api/orders/purchases/{purchase['id']}/void")
+    assert response.status_code == 200
+    original = app_client.get(f"/api/orders/purchases/{purchase['id']}").json()["data"]
+    assert original["reversed_by"] is not None
+    reversals = [
+        row
+        for row in app_client.get("/api/orders/purchases").json()["data"]
+        if row["source_order_id"] == purchase["id"]
+    ]
+    assert len(reversals) == 1
+    assert reversals[0]["order_type"] == "purchase_return"
+    assert _snapshot(app_client, part["id"]) == Decimal("0")

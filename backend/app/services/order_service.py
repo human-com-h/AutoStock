@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import BusinessAppError
+from app.core.time import business_date_str
 from app.db.write_helpers import DEFAULT_DEVICE_ID, new_row_kwargs
 from app.models.master_data import Part
 from app.models.orders import PurchaseItem, PurchaseOrder, SalesItem, SalesOrder
@@ -16,7 +17,7 @@ from app.services.order_no_service import generate_order_no
 from app.services.settings_service import get_allow_negative_stock
 from app.services.stock_service import append_ledger_entry, check_available_stock
 
-_TODAY = lambda: datetime.now(UTC).date().isoformat()  # noqa: E731
+_TODAY = business_date_str
 
 
 def _line_amount(quantity: Decimal, unit_price: int) -> int:

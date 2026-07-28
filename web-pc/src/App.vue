@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Box,
+  Collection,
   DataAnalysis,
   Document,
   Goods,
@@ -14,6 +15,7 @@ import {
 const nav = [
   ["/", "经营概览", HomeFilled],
   ["/parts", "零件档案", Goods],
+  ["/master-data", "基础资料", Collection],
   ["/purchase", "采购入库", ShoppingCart],
   ["/sales", "销售出库", Sell],
   ["/inventory", "库存查询", Box],
