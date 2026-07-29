@@ -56,6 +56,11 @@ def test_pairing_exchange_and_bootstrap(app_client):
     assert len(orders.json()["data"]["purchase_orders"]) == 1
     assert len(orders.json()["data"]["stock_ledgers"]) == 1
 
+    settings = app_client.get("/api/mobile/bootstrap/settings", headers=headers)
+    assert settings.status_code == 200
+    assert settings.json()["data"]["shop_name"] == "AutoStock 汽配店"
+    assert settings.json()["data"]["print_custom_fields"][0]["label"] == "运输方式"
+
     reused = app_client.post(
         "/api/pairing/exchange",
         json={"code": code, "device_name": "重复手机"},

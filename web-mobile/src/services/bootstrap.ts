@@ -1,4 +1,11 @@
-import { db, setMeta, type NamedRow, type PartRow, type StockLedgerRow } from "../db/schema";
+import {
+  db,
+  setMeta,
+  type MobilePrintSettings,
+  type NamedRow,
+  type PartRow,
+  type StockLedgerRow,
+} from "../db/schema";
 import { apiRequest } from "./api";
 
 interface PartsPage {
@@ -74,9 +81,10 @@ export async function initializeFromServer(
     if (!page.has_more) break;
   } while (true);
 
-  const [masterData, orders] = await Promise.all([
+  const [masterData, orders, printSettings] = await Promise.all([
     apiRequest<Record<string, NamedRow[]>>("/api/mobile/bootstrap/master-data"),
     apiRequest<BootstrapOrders>("/api/mobile/bootstrap/orders"),
+    apiRequest<MobilePrintSettings>("/api/mobile/bootstrap/settings"),
   ]);
 
   await db.transaction(
@@ -118,6 +126,7 @@ export async function initializeFromServer(
       );
       await setMeta("initialized_at", new Date().toISOString());
       await setMeta("last_sync_at", new Date().toISOString());
+      await setMeta("print_settings", JSON.stringify(printSettings));
     },
   );
 }

@@ -10,8 +10,8 @@ type InventoryTab = "parts" | "stock" | "takes";
 const route = useRoute();
 const router = useRouter();
 const tabs: Array<{ key: InventoryTab; label: string; description: string }> = [
+  { key: "stock", label: "库存查询", description: "查询实时库存、平均成本、库存金额并追溯逐笔变化" },
   { key: "parts", label: "零件档案", description: "维护零件资料、价格与库存上下限" },
-  { key: "stock", label: "库存查询", description: "查询实时库存、平均成本与库存金额" },
   { key: "takes", label: "库存盘点", description: "创建盘点单、录入实盘数量并过账" },
 ];
 const views = {
@@ -41,6 +41,7 @@ function switchTab(tab: InventoryTab) {
   <section class="inventory-management">
     <div class="inventory-switcher">
       <div>
+        <p class="eyebrow">库存工作台</p>
         <h2>库存管理</h2>
         <p>{{ activeDescription }}</p>
       </div>
@@ -78,13 +79,19 @@ function switchTab(tab: InventoryTab) {
   border-radius: 8px;
 }
 .inventory-switcher h2 {
-  margin: 0 0 6px;
-  font-size: 18px;
+  margin: 2px 0 7px;
+  font-size: 22px;
 }
 .inventory-switcher p {
   margin: 0;
   color: #657186;
   font-size: 13px;
+}
+.inventory-switcher .eyebrow {
+  color: #2f6bff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
 }
 @media (max-width: 900px) {
   .inventory-switcher {

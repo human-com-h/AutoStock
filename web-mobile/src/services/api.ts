@@ -36,7 +36,6 @@ export async function apiRequest<T>(
 }
 
 export async function probeHealth(): Promise<boolean> {
-  if (!navigator.onLine) return false;
   try {
     await apiRequest("/api/health", {}, 2_000);
     return true;

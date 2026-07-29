@@ -156,6 +156,48 @@ def test_recalculate_all_matches_incremental_result(db_session):
     assert after.avg_cost == before_avg_cost
 
 
+def test_value_adjusting_reversal_restores_remaining_inventory_cost(db_session):
+    part = _make_part(db_session, part_number="P904")
+    append_ledger_entry(
+        db_session,
+        part_id=part.id,
+        change_type="purchase",
+        quantity=Decimal("10"),
+        source_type="purchase_item",
+        source_id="value-1",
+        unit_cost=500,
+    )
+    append_ledger_entry(
+        db_session,
+        part_id=part.id,
+        change_type="purchase",
+        quantity=Decimal("10"),
+        source_type="purchase_item",
+        source_id="value-2",
+        unit_cost=700,
+    )
+    append_ledger_entry(
+        db_session,
+        part_id=part.id,
+        change_type="purchase_return",
+        quantity=Decimal("-10"),
+        source_type="purchase_item_void_value",
+        source_id="value-void",
+        unit_cost=500,
+        adjust_avg_on_out=True,
+    )
+    db_session.commit()
+
+    snapshot = get_snapshot(db_session, part.id)
+    assert snapshot.quantity == Decimal("10")
+    assert snapshot.avg_cost == 700
+
+    recalculate_all(db_session)
+    recalculated = get_snapshot(db_session, part.id)
+    assert recalculated.quantity == Decimal("10")
+    assert recalculated.avg_cost == 700
+
+
 def test_rejects_unknown_change_type(db_session):
     part = _make_part(db_session, part_number="P903")
     with pytest.raises(ValueError):

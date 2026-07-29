@@ -3,6 +3,11 @@ import { createRouter, createWebHashHistory } from "vue-router";
 export default createRouter({
   history: createWebHashHistory(),
   routes: [
+    {
+      path: "/orders/:kind/:id/print",
+      component: () => import("../views/OrderPrintView.vue"),
+      meta: { title: "单据打印预览", layout: "print" },
+    },
     { path: "/", component: () => import("../views/HomeView.vue"), meta: { title: "经营概览" } },
     { path: "/parts", redirect: { path: "/inventory", query: { tab: "parts" } } },
     { path: "/master-data", component: () => import("../views/MasterDataView.vue"), meta: { title: "基础资料" } },

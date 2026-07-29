@@ -1,9 +1,34 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { Delete, Plus } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { http } from "../api";
 
-const form = reactive({ shop_name: "", default_unit: "个", allow_negative_stock: true, stale_days: 180 });
+type PrintCustomField = {
+  label: string;
+  value: string;
+  visible: boolean;
+  handwritten: boolean;
+};
+
+const form = reactive({
+  shop_name: "",
+  default_unit: "个",
+  allow_negative_stock: true,
+  stale_days: 180,
+  shop_phone: "",
+  shop_address: "",
+  business_scope: "",
+  print_notice: "商品如有质量问题，请及时联系我们处理。",
+  print_warehouse: "主仓库",
+  print_operator: "管理员",
+  settlement_method: "现结",
+  print_payment_account: "",
+  print_wechat: "",
+  print_warranty_period: "",
+  print_reviewer: "",
+  print_custom_fields: [] as PrintCustomField[],
+});
 const backups = ref<any[]>([]);
 const password = reactive({ current_password: "", new_password: "" });
 const pairing = ref<any | null>(null);
@@ -15,10 +40,47 @@ const pairingQrSrc = computed(() =>
     : "",
 );
 async function load() {
-  Object.assign(form, await http.get("/settings"));
+  const settings = await http.get("/settings") as unknown as typeof form;
+  Object.assign(form, settings);
+  form.print_custom_fields = Array.isArray(settings.print_custom_fields)
+    ? settings.print_custom_fields.map((field) => ({ ...field }))
+    : [];
   backups.value = await http.get("/backups") as unknown as any[];
 }
-async function save() { Object.assign(form, await http.put("/settings", form)); ElMessage.success("系统设置已保存"); }
+function addPrintField() {
+  if (form.print_custom_fields.length >= 5) {
+    ElMessage.warning("最多添加 5 个自定义字段");
+    return;
+  }
+  form.print_custom_fields.push({
+    label: "",
+    value: "",
+    visible: true,
+    handwritten: true,
+  });
+}
+function removePrintField(index: number) {
+  form.print_custom_fields.splice(index, 1);
+}
+async function save() {
+  const printCustomFields = form.print_custom_fields.map((field) => ({
+    ...field,
+    label: field.label.trim(),
+    value: field.value.trim(),
+  }));
+  if (printCustomFields.some((field) => !field.label)) {
+    ElMessage.warning("请填写自定义字段名称，或删除空白字段");
+    return;
+  }
+  Object.assign(
+    form,
+    await http.put("/settings", {
+      ...form,
+      print_custom_fields: printCustomFields,
+    }),
+  );
+  ElMessage.success("系统设置已保存");
+}
 async function changePassword() { await http.put("/settings/password", password); password.current_password=""; password.new_password=""; ElMessage.success("密码已修改"); }
 async function backup() { await http.post("/backups"); await load(); ElMessage.success("备份已创建"); }
 async function restore(row:any) {
@@ -44,6 +106,85 @@ onMounted(load);
         <el-form-item label="默认单位"><el-input v-model="form.default_unit"/></el-form-item>
         <el-form-item label="允许负库存"><el-switch v-model="form.allow_negative_stock"/></el-form-item>
         <el-form-item label="滞销判定天数"><el-input-number v-model="form.stale_days" :min="1"/></el-form-item>
+        <el-divider content-position="left">单据打印抬头</el-divider>
+        <el-form-item label="店铺电话"><el-input v-model="form.shop_phone" placeholder="显示在单据底部"/></el-form-item>
+        <el-form-item label="店铺地址"><el-input v-model="form.shop_address" placeholder="显示在单据底部"/></el-form-item>
+        <el-form-item label="发货/入库仓库"><el-input v-model="form.print_warehouse"/></el-form-item>
+        <el-form-item label="默认制单人"><el-input v-model="form.print_operator"/></el-form-item>
+        <el-form-item label="默认复核人"><el-input v-model="form.print_reviewer" placeholder="留空时打印横线"/></el-form-item>
+        <el-form-item label="默认结算方式"><el-input v-model="form.settlement_method"/></el-form-item>
+        <el-form-item label="经营项目">
+          <el-input v-model="form.business_scope" type="textarea" :rows="2" placeholder="例如：制动片、离合器片、轴承等"/>
+        </el-form-item>
+        <el-form-item label="打印说明">
+          <el-input v-model="form.print_notice" type="textarea" :rows="2"/>
+        </el-form-item>
+        <el-divider content-position="left">收款与售后信息</el-divider>
+        <el-form-item label="开户行/收款账户">
+          <el-input
+            v-model="form.print_payment_account"
+            type="textarea"
+            :rows="2"
+            placeholder="例如：工商银行 6222 **** **** 1234 户名：张三"
+          />
+        </el-form-item>
+        <el-form-item label="联系微信">
+          <el-input v-model="form.print_wechat" placeholder="留空则不在单据中显示"/>
+        </el-form-item>
+        <el-form-item label="售后期限">
+          <el-input v-model="form.print_warranty_period" placeholder="例如：三包期内凭本单退换"/>
+        </el-form-item>
+
+        <el-divider content-position="left">
+          <div class="custom-divider">
+            <span>自定义打印字段（最多 5 项）</span>
+            <el-button
+              size="small"
+              plain
+              :icon="Plus"
+              :disabled="form.print_custom_fields.length >= 5"
+              @click="addPrintField"
+            >
+              添加字段
+            </el-button>
+          </div>
+        </el-divider>
+        <p class="custom-field-tip">
+          “留空手写”会在打印件上显示横线，不会修改或补写历史单据数据。
+        </p>
+        <div v-if="form.print_custom_fields.length" class="custom-field-list">
+          <div
+            v-for="(field, index) in form.print_custom_fields"
+            :key="index"
+            class="custom-field-card"
+          >
+            <div class="custom-field-inputs">
+              <el-input
+                v-model="field.label"
+                maxlength="20"
+                placeholder="字段名称，如物流单号"
+              />
+              <el-input
+                v-model="field.value"
+                maxlength="100"
+                :disabled="field.handwritten"
+                :placeholder="field.handwritten ? '打印时显示手写横线' : '默认打印内容'"
+              />
+            </div>
+            <div class="custom-field-options">
+              <el-switch v-model="field.visible" active-text="显示"/>
+              <el-checkbox v-model="field.handwritten">留空手写</el-checkbox>
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                aria-label="删除自定义字段"
+                @click="removePrintField(index)"
+              />
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无自定义字段" :image-size="54"/>
         <el-form-item><el-button type="primary" @click="save">保存设置</el-button></el-form-item>
       </el-form></div>
     </el-tab-pane>
@@ -95,7 +236,13 @@ onMounted(load);
   </el-tabs>
 </template>
 <style scoped>
-.settings-panel{max-width:680px;margin-top:12px}
+.settings-panel{max-width:860px;margin-top:12px}
+.custom-divider{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px}
+.custom-field-tip{margin:-4px 0 12px 160px;color:#7b8798;font-size:13px;line-height:1.6}
+.custom-field-list{margin:0 0 18px 160px}
+.custom-field-card{display:flex;align-items:center;gap:14px;margin-bottom:10px;padding:12px;border:1px solid #e1e6ed;border-radius:8px;background:#fafbfc}
+.custom-field-inputs{display:grid;flex:1;grid-template-columns:minmax(160px,.65fr) minmax(220px,1.35fr);gap:10px}
+.custom-field-options{display:flex;flex:none;align-items:center;gap:12px}
 .pairing-layout{display:grid;grid-template-columns:minmax(430px,1.2fr) minmax(320px,.8fr);gap:16px}
 .pairing-panel h3,.android-guide h3{margin-top:0}
 .pairing-intro{color:#657186;line-height:1.6}
@@ -107,4 +254,10 @@ onMounted(load);
 .pairing-result code{margin-top:12px;padding:9px;background:#f4f7fb;border-radius:6px;font-size:11px;overflow-wrap:anywhere}
 .android-guide ol{padding-left:20px;color:#394a61;line-height:2}
 @media(max-width:1000px){.pairing-layout{grid-template-columns:1fr}}
+@media(max-width:760px){
+  .custom-field-tip,.custom-field-list{margin-left:0}
+  .custom-field-card{align-items:stretch;flex-direction:column}
+  .custom-field-inputs{grid-template-columns:1fr}
+  .custom-field-options{justify-content:space-between}
+}
 </style>

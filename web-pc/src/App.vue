@@ -26,7 +26,8 @@ const nav = [
 </script>
 
 <template>
-  <el-container class="app-shell">
+  <router-view v-if="$route.meta.layout === 'print'" />
+  <el-container v-else class="app-shell">
     <el-aside width="220px" class="sidebar">
       <div class="brand"><Document /> AutoStock <span>汽配库存</span></div>
       <el-menu router :default-active="$route.path" class="nav">

@@ -4,6 +4,7 @@ import {
   getMeta,
   setMeta,
   type BusinessRow,
+  type MobilePrintSettings,
   type PartRow,
   type SyncHistoryRow,
   type SyncQueueRow,
@@ -290,6 +291,10 @@ async function runSynchronization(): Promise<SyncRunResult> {
       cursor = page.next_rev;
       if (!page.has_more) break;
     }
+    const printSettings = await apiRequest<MobilePrintSettings>(
+      "/api/mobile/bootstrap/settings",
+    );
+    await setMeta("print_settings", JSON.stringify(printSettings));
     const now = new Date().toISOString();
     await setMeta("last_sync_at", now);
     const message = rejected

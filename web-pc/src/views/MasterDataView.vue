@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { Printer } from "@element-plus/icons-vue";
+import { useRouter } from "vue-router";
 import { http } from "../api";
 import {
   orderAmountSign,
@@ -9,6 +11,7 @@ import {
 } from "../utils/order";
 
 type Kind = "categories" | "brands" | "suppliers" | "customers";
+const router = useRouter();
 const kind = ref<Kind>("categories");
 const rows = ref<any[]>([]);
 const dialog = ref(false);
@@ -109,6 +112,11 @@ function itemSummary(row: any) {
     .map((item: any) => `${partNames.value[item.part_id] || "未知零件"} × ${item.quantity}`)
     .join("；");
 }
+function previewRecord(row: any) {
+  const documentKind = recordContext.kind === "suppliers" ? "purchases" : "sales";
+  recordDialog.value = false;
+  void router.push(`/orders/${documentKind}/${row.id}/print`);
+}
 function money(value: number) {
   return `¥ ${(value / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
 }
@@ -161,7 +169,7 @@ onMounted(load);
     </el-form>
     <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
   </el-dialog>
-  <el-dialog v-model="recordDialog" :title="recordTitle" width="980">
+  <el-dialog v-model="recordDialog" class="record-dialog" :title="recordTitle" width="1120px">
     <div class="record-summary">
       <span>共 <strong>{{ businessRecords.length }}</strong> 张单据</span>
       <span>入库 <strong>{{ inboundCount }}</strong> 张</span>
@@ -186,6 +194,13 @@ onMounted(load);
       </el-table-column>
       <el-table-column label="金额" width="130" align="right">
         <template #default="{row}">{{ money(orderAmountSign(row.order_type)*row.total_amount) }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="110" fixed="right" align="right">
+        <template #default="{row}">
+          <el-button link type="primary" :icon="Printer" @click="previewRecord(row)">
+            进入单据
+          </el-button>
+        </template>
       </el-table-column>
     </el-table>
   </el-dialog>
@@ -212,5 +227,8 @@ onMounted(load);
 }
 .record-summary strong {
   color: #172033;
+}
+:global(.record-dialog) {
+  max-width: 92vw;
 }
 </style>

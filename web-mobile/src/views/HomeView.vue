@@ -2,7 +2,9 @@
 import { computed, onActivated, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { getMeta } from "../db/schema";
+import { getMobileBusinessOverview, type MobileBusinessOverview } from "../services/dashboard";
 import { searchLocalParts, type PartWithStock } from "../services/inventory";
+import { formatMoney } from "../utils/print";
 
 const router = useRouter();
 const keyword = ref("");
@@ -10,6 +12,11 @@ const rows = ref<PartWithStock[]>([]);
 const loading = ref(false);
 const initialized = ref(true);
 const lowStockOnly = ref(false);
+const overview = ref<MobileBusinessOverview>({
+  salesAmount: 0,
+  purchaseAmount: 0,
+  orderCount: 0,
+});
 const visibleRows = computed(() => rows.value.slice(0, 200));
 const lowCount = computed(
   () => rows.value.filter((row) => row.displayQuantity < Number(row.part.min_stock)).length,
@@ -18,7 +25,10 @@ const lowCount = computed(
 async function load(): Promise<void> {
   loading.value = true;
   initialized.value = Boolean(await getMeta("initialized_at"));
-  rows.value = await searchLocalParts(keyword.value, lowStockOnly.value);
+  [rows.value, overview.value] = await Promise.all([
+    searchLocalParts(keyword.value, lowStockOnly.value),
+    getMobileBusinessOverview(),
+  ]);
   loading.value = false;
 }
 
@@ -33,6 +43,11 @@ onActivated(load);
 
 <template>
   <section class="page inventory-page">
+    <div v-if="initialized" class="today-overview surface">
+      <div><span>今日销售</span><strong>¥{{ formatMoney(overview.salesAmount) }}</strong></div>
+      <div><span>今日采购</span><strong>¥{{ formatMoney(overview.purchaseAmount) }}</strong></div>
+      <div><span>今日单据</span><strong>{{ overview.orderCount }} <small>笔</small></strong></div>
+    </div>
     <van-search
       v-model="keyword"
       shape="round"
@@ -91,6 +106,19 @@ onActivated(load);
 
 <style scoped>
 .inventory-page :deep(.van-search) { padding: 4px 0 12px; }
+.today-overview {
+  display: grid;
+  grid-template-columns: 1fr 1fr .75fr;
+  margin-bottom: 10px;
+  padding: 13px 6px;
+}
+.today-overview div { min-width: 0; padding: 0 9px; border-right: 1px solid #e4eaf1; }
+.today-overview div:last-child { border-right: 0; }
+.today-overview span,
+.today-overview strong { display: block; }
+.today-overview span { color: var(--muted); font-size: 10px; }
+.today-overview strong { overflow: hidden; margin-top: 6px; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.today-overview small { font-size: 10px; font-weight: 500; }
 .inventory-page :deep(.van-search__content) {
   padding: 5px 12px;
   background: white;

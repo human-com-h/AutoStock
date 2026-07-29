@@ -7,7 +7,7 @@ import { useAppStore } from "./stores/app";
 
 const route = useRoute();
 const appStore = useAppStore();
-const chromeVisible = computed(() => route.name !== "setup");
+const chromeVisible = computed(() => route.meta.chrome !== false);
 onMounted(appStore.bootstrapState);
 </script>
 

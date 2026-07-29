@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from io import BytesIO
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.errors import success_body
@@ -14,6 +18,7 @@ from app.schemas.order import (
     SalesOrderOut,
 )
 from app.services import order_service as svc
+from app.services.order_print_service import build_order_pdf
 
 router = APIRouter(
     prefix="/api/orders",
@@ -75,6 +80,7 @@ def create_purchase(payload: PurchaseOrderCreate, db: Session = Depends(get_db))
     order = svc.create_purchase_order(
         db,
         supplier_id=payload.supplier_id,
+        order_date=payload.order_date.isoformat() if payload.order_date else None,
         items=[item.model_dump() for item in payload.items],
         remark=payload.remark,
     )
@@ -84,6 +90,16 @@ def create_purchase(payload: PurchaseOrderCreate, db: Session = Depends(get_db))
 @router.get("/purchases/{order_id}")
 def get_purchase(order_id: str, db: Session = Depends(get_db)):
     return success_body(data=_purchase_out(db, svc.get_purchase_order(db, order_id)))
+
+
+@router.get("/purchases/{order_id}/pdf")
+def download_purchase_pdf(order_id: str, db: Session = Depends(get_db)):
+    content, filename = build_order_pdf(db, "purchases", order_id)
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.post("/purchases/{order_id}/returns")
@@ -122,6 +138,7 @@ def create_sale(payload: SalesOrderCreate, db: Session = Depends(get_db)):
         db,
         customer_id=payload.customer_id,
         customer_name=payload.customer_name,
+        order_date=payload.order_date.isoformat() if payload.order_date else None,
         items=[item.model_dump() for item in payload.items],
         remark=payload.remark,
     )
@@ -131,6 +148,16 @@ def create_sale(payload: SalesOrderCreate, db: Session = Depends(get_db)):
 @router.get("/sales/{order_id}")
 def get_sale(order_id: str, db: Session = Depends(get_db)):
     return success_body(data=_sales_out(db, svc.get_sales_order(db, order_id)))
+
+
+@router.get("/sales/{order_id}/pdf")
+def download_sales_pdf(order_id: str, db: Session = Depends(get_db)):
+    content, filename = build_order_pdf(db, "sales", order_id)
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.post("/sales/{order_id}/returns")

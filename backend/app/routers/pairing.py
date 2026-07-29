@@ -74,6 +74,14 @@ def bootstrap_master_data(db: Session = Depends(get_db)):
 
 
 @router.get(
+    "/api/mobile/bootstrap/settings",
+    dependencies=[Depends(require_device_auth)],
+)
+def bootstrap_settings(db: Session = Depends(get_db)):
+    return success_body(data=bootstrap_service.mobile_settings(db))
+
+
+@router.get(
     "/api/mobile/bootstrap/orders",
     dependencies=[Depends(require_device_auth)],
 )

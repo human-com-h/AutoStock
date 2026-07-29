@@ -36,6 +36,24 @@ const router = createRouter({
       meta: { title: "近期记录" },
     },
     {
+      path: "/records/:kind(purchase|sale)/:id",
+      name: "order-detail",
+      component: () => import("../views/OrderDetailView.vue"),
+      meta: { title: "单据详情" },
+    },
+    {
+      path: "/records/:kind(purchase|sale)/:id/print",
+      name: "mobile-order-print",
+      component: () => import("../views/MobileOrderPrintView.vue"),
+      meta: { title: "打印预览", chrome: false },
+    },
+    {
+      path: "/contacts",
+      name: "contacts",
+      component: () => import("../views/PartnersView.vue"),
+      meta: { title: "客户与供应商" },
+    },
+    {
       path: "/profile",
       name: "profile",
       component: () => import("../views/ProfileView.vue"),
@@ -51,6 +69,7 @@ const router = createRouter({
       path: "/setup",
       name: "setup",
       component: () => import("../views/SetupView.vue"),
+      meta: { chrome: false },
     },
   ],
 });

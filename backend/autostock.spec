@@ -1,7 +1,11 @@
 from PyInstaller.utils.hooks import collect_submodules
 
 
-hidden_imports = collect_submodules("uvicorn") + collect_submodules("qrcode")
+hidden_imports = (
+    collect_submodules("uvicorn")
+    + collect_submodules("qrcode")
+    + collect_submodules("reportlab")
+)
 
 analysis = Analysis(
     ["run_web.py"],

@@ -9,8 +9,13 @@ const active = computed({
     const name = String(route.name || "inventory");
     if (name.startsWith("purchase")) return "purchase";
     if (name.startsWith("sale")) return "sale";
-    if (name.startsWith("records")) return "records";
-    if (name.startsWith("profile") || name === "setup" || name === "sync") return "profile";
+    if (name.startsWith("records") || name === "order-detail") return "records";
+    if (
+      name.startsWith("profile") ||
+      name === "setup" ||
+      name === "sync" ||
+      name === "contacts"
+    ) return "profile";
     return "inventory";
   },
   set: (value: string) => router.push({ name: value }),

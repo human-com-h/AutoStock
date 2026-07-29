@@ -27,6 +27,9 @@ onMounted(async () => {
     </div>
     <h2 class="section-title">连接与安全</h2>
     <div class="surface action-list">
+      <button type="button" @click="router.push('/contacts')">
+        <van-icon name="friends-o" /><span><strong>客户与供应商</strong><small>离线查看联系人、地址并快速拨号</small></span><van-icon name="arrow" />
+      </button>
       <button type="button" @click="router.push('/sync')">
         <van-icon name="exchange" /><span><strong>同步中心</strong><small>立即同步、查看结果与失败记录</small></span><van-icon name="arrow" />
       </button>

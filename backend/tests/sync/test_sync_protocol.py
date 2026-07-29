@@ -44,7 +44,13 @@ def _db_part(part_id: str) -> dict:
         return dump_row(db.get(Part, part_id))
 
 
-def _mobile_sale_changes(part_id: str, *, quantity: int = 5, order_no: str | None = None):
+def _mobile_sale_changes(
+    part_id: str,
+    *,
+    quantity: int = 5,
+    order_no: str | None = None,
+    unit_cost: int = 500,
+):
     now = datetime.now(UTC).isoformat()
     order_id = new_ulid()
     item_id = new_ulid()
@@ -79,7 +85,7 @@ def _mobile_sale_changes(part_id: str, *, quantity: int = 5, order_no: str | Non
         "quantity": quantity,
         "sale_price": 800,
         "amount": quantity * 800,
-        "cost_amount": 0,
+        "cost_amount": quantity * unit_cost,
         "remark": None,
     }
     ledger = {
@@ -88,7 +94,7 @@ def _mobile_sale_changes(part_id: str, *, quantity: int = 5, order_no: str | Non
         "part_id": part_id,
         "change_type": "sale",
         "quantity": -quantity,
-        "unit_cost": 0,
+        "unit_cost": unit_cost,
         "source_type": "sales_item",
         "source_id": item_id,
         "occurred_at": now,
@@ -136,6 +142,7 @@ def test_offline_operations_converge_and_batch_retry_is_idempotent(app_client):
     assert Decimal(str(snapshot["quantity"])) == Decimal("95")
     sales = app_client.get("/api/orders/sales").json()["data"]
     assert len(sales) == 1
+    assert sales[0]["items"][0]["cost_amount"] == 2500
     pulled = app_client.get(
         "/api/sync/pull",
         params={"since_rev": device["server_rev"], "limit": 500},
@@ -151,6 +158,69 @@ def test_offline_operations_converge_and_batch_retry_is_idempotent(app_client):
             "both_sides_converged": True,
         },
     )
+
+
+def test_mobile_order_group_rolls_back_when_ledger_is_invalid(app_client):
+    part = _create_part(app_client, "SYNC-ATOMIC")
+    app_client.post(
+        "/api/orders/purchases",
+        json={"items": [{"part_id": part["id"], "quantity": 10, "purchase_price": 500}]},
+    )
+    device, headers = _pair(app_client)
+    changes = _mobile_sale_changes(part["id"], quantity=2)
+    changes[-1]["row"]["quantity"] = -3
+
+    result = _push(app_client, headers, device["device_id"], changes).json()["data"]
+    assert result["accepted"] == 0
+    assert len(result["rejected"]) == 3
+    assert app_client.get("/api/orders/sales").json()["data"] == []
+    snapshot = app_client.get(f"/api/stock/{part['id']}").json()["data"]
+    assert Decimal(str(snapshot["quantity"])) == Decimal("10")
+
+
+def test_legacy_mobile_zero_cost_is_recovered_from_server_snapshot(app_client):
+    part = _create_part(app_client, "SYNC-LEGACY-COST")
+    app_client.post(
+        "/api/orders/purchases",
+        json={"items": [{"part_id": part["id"], "quantity": 10, "purchase_price": 500}]},
+    )
+    device, headers = _pair(app_client)
+    changes = _mobile_sale_changes(part["id"], quantity=2, unit_cost=0)
+
+    result = _push(app_client, headers, device["device_id"], changes).json()["data"]
+    assert result["rejected"] == []
+    sale = app_client.get("/api/orders/sales").json()["data"][0]
+    assert sale["items"][0]["cost_amount"] == 1000
+
+
+def test_same_day_void_tombstones_are_visible_to_mobile_pull(app_client):
+    part = _create_part(app_client, "SYNC-VOID-PULL")
+    device, headers = _pair(app_client)
+    cursor = device["server_rev"]
+    purchase = app_client.post(
+        "/api/orders/purchases",
+        json={"items": [{"part_id": part["id"], "quantity": 2, "purchase_price": 500}]},
+    ).json()["data"]
+    assert app_client.post(f"/api/orders/purchases/{purchase['id']}/void").status_code == 200
+
+    pulled = app_client.get(
+        "/api/sync/pull",
+        params={"since_rev": cursor, "limit": 500},
+        headers=headers,
+    ).json()["data"]
+    order_change = next(
+        row
+        for row in pulled["changes"]
+        if row["table"] == "purchase_order" and row["row"]["id"] == purchase["id"]
+    )
+    item_change = next(
+        row
+        for row in pulled["changes"]
+        if row["table"] == "purchase_item"
+        and row["row"]["order_id"] == purchase["id"]
+    )
+    assert order_change["op"] == "delete"
+    assert item_change["op"] == "delete"
 
 
 def test_lww_remote_newer_wins_equal_time_pc_wins_and_conflicts_are_archived(app_client):

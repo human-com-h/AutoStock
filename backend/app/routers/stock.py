@@ -43,6 +43,15 @@ def reconcile(db: Session = Depends(get_db)):
     return success_body(data=svc.reconcile_inventory(db))
 
 
+@router.get("/{part_id}/history")
+def get_part_history(
+    part_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return success_body(data=svc.get_part_history(db, part_id, limit=limit))
+
+
 @router.get("/{part_id}")
 def get_snapshot(part_id: str, db: Session = Depends(get_db)):
     row = svc.get_snapshot(db, part_id)

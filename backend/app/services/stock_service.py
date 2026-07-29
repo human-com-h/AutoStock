@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
@@ -16,6 +16,14 @@ from app.sync.change_seq import next_rev
 
 ALL_CHANGE_TYPES = frozenset(
     {"purchase", "sale", "purchase_return", "sale_return", "adjust", "opening"}
+)
+VALUE_ADJUSTING_OUT_SOURCE_TYPES = frozenset(
+    {
+        "purchase_item_void_value",
+        "purchase_item_reversal_value",
+        "sales_item_void_value",
+        "sales_item_reversal_value",
+    }
 )
 
 
@@ -39,6 +47,27 @@ def weighted_average_cost_after_in(
     return round_half_up(float(total_cost / new_quantity))
 
 
+def weighted_average_cost_after_value_out(
+    current_quantity: Decimal,
+    current_avg_cost: int,
+    out_quantity: Decimal,
+    out_unit_cost: int,
+) -> int:
+    """撤销既有入库时按原入库价值扣回，普通销售/退货出库仍不改变均价。"""
+    if out_quantity <= 0:
+        raise ValueError("出库数量必须为正数")
+    new_quantity = current_quantity - out_quantity
+    if new_quantity == 0:
+        return 0
+    remaining_cost = current_quantity * current_avg_cost - out_quantity * out_unit_cost
+    return int(
+        (remaining_cost / new_quantity).quantize(
+            Decimal("1"),
+            rounding=ROUND_HALF_UP,
+        )
+    )
+
+
 def _get_or_create_snapshot(db: Session, part_id: str) -> StockSnapshot:
     snapshot = db.get(StockSnapshot, part_id)
     if snapshot is None:
@@ -60,6 +89,7 @@ def append_ledger_entry(
     remark: str | None = None,
     occurred_at: str | None = None,
     external_row: dict | None = None,
+    adjust_avg_on_out: bool = False,
 ) -> StockLedger | None:
     """写入一条库存流水并同步更新快照，全程在调用方事务内完成（§4.4、§12）。
 
@@ -97,6 +127,13 @@ def append_ledger_entry(
     else:
         # 出库方向：按当前均价固化成本，均价本身不变
         entry_unit_cost = unit_cost if unit_cost is not None else snapshot.avg_cost
+        if adjust_avg_on_out:
+            snapshot.avg_cost = weighted_average_cost_after_value_out(
+                current_quantity=Decimal(str(snapshot.quantity)),
+                current_avg_cost=snapshot.avg_cost,
+                out_quantity=-quantity,
+                out_unit_cost=entry_unit_cost,
+            )
         snapshot.last_out_at = occurred_at or datetime.now(UTC).isoformat()
 
     snapshot.quantity = Decimal(str(snapshot.quantity)) + quantity
@@ -178,6 +215,13 @@ def recalculate_all(db: Session) -> None:
                 )
                 last_in_at = entry.occurred_at
             else:
+                if entry.source_type in VALUE_ADJUSTING_OUT_SOURCE_TYPES:
+                    avg_cost = weighted_average_cost_after_value_out(
+                        current_quantity=quantity,
+                        current_avg_cost=avg_cost,
+                        out_quantity=-qty,
+                        out_unit_cost=entry.unit_cost,
+                    )
                 last_out_at = entry.occurred_at
             quantity += qty
 
@@ -299,6 +343,134 @@ def get_snapshot(db: Session, part_id: str) -> StockSnapshot:
     if snapshot is None:
         raise BusinessAppError("该零件尚无库存记录", code="BUSINESS_NOT_FOUND")
     return snapshot
+
+
+def get_part_history(db: Session, part_id: str, *, limit: int = 100) -> dict:
+    """返回单个零件的库存流水、逐笔结存以及可进入的来源单据。
+
+    逐笔结存始终从完整流水按发生顺序计算，最后才截取最近记录，避免分页截断后
+    把抽屉里的“变动后库存”算错。该查询只读 stock_ledger，不依赖快照反推历史。
+    """
+    from app.models.master_data import Part
+    from app.models.orders import PurchaseItem, PurchaseOrder, SalesItem, SalesOrder
+
+    part = db.get(Part, part_id)
+    if part is None or part.is_deleted:
+        raise BusinessAppError("零件不存在", code="BUSINESS_NOT_FOUND")
+
+    ledgers = list(
+        db.execute(
+            select(StockLedger)
+            .where(StockLedger.part_id == part_id, StockLedger.is_deleted == 0)
+            .order_by(StockLedger.occurred_at, StockLedger.rev, StockLedger.id)
+        ).scalars()
+    )
+    purchase_item_ids = {
+        row.source_id for row in ledgers if row.source_type.startswith("purchase_item")
+    }
+    sales_item_ids = {
+        row.source_id for row in ledgers if row.source_type.startswith("sales_item")
+    }
+    purchase_items = (
+        {
+            row.id: row
+            for row in db.execute(
+                select(PurchaseItem).where(PurchaseItem.id.in_(purchase_item_ids))
+            ).scalars()
+        }
+        if purchase_item_ids
+        else {}
+    )
+    sales_items = (
+        {
+            row.id: row
+            for row in db.execute(
+                select(SalesItem).where(SalesItem.id.in_(sales_item_ids))
+            ).scalars()
+        }
+        if sales_item_ids
+        else {}
+    )
+    purchase_order_ids = {row.order_id for row in purchase_items.values()}
+    sales_order_ids = {row.order_id for row in sales_items.values()}
+    purchase_orders = (
+        {
+            row.id: row
+            for row in db.execute(
+                select(PurchaseOrder).where(PurchaseOrder.id.in_(purchase_order_ids))
+            ).scalars()
+        }
+        if purchase_order_ids
+        else {}
+    )
+    sales_orders = (
+        {
+            row.id: row
+            for row in db.execute(
+                select(SalesOrder).where(SalesOrder.id.in_(sales_order_ids))
+            ).scalars()
+        }
+        if sales_order_ids
+        else {}
+    )
+
+    balance = Decimal("0")
+    entries = []
+    for row in ledgers:
+        quantity = Decimal(str(row.quantity))
+        balance += quantity
+        document = None
+        if row.source_type.startswith("purchase_item"):
+            item = purchase_items.get(row.source_id)
+            order = purchase_orders.get(item.order_id) if item else None
+            if order is not None:
+                document = {
+                    "kind": "purchases",
+                    "id": order.id,
+                    "order_no": order.order_no,
+                    "order_type": order.order_type,
+                    "available": not bool(order.is_deleted),
+                }
+        elif row.source_type.startswith("sales_item"):
+            item = sales_items.get(row.source_id)
+            order = sales_orders.get(item.order_id) if item else None
+            if order is not None:
+                document = {
+                    "kind": "sales",
+                    "id": order.id,
+                    "order_no": order.order_no,
+                    "order_type": order.order_type,
+                    "available": not bool(order.is_deleted),
+                }
+
+        entries.append(
+            {
+                "id": row.id,
+                "change_type": row.change_type,
+                "quantity": float(quantity),
+                "balance_after": float(balance),
+                "unit_cost": row.unit_cost,
+                "source_type": row.source_type,
+                "source_id": row.source_id,
+                "occurred_at": row.occurred_at,
+                "remark": row.remark,
+                "document": document,
+            }
+        )
+
+    snapshot = db.get(StockSnapshot, part_id)
+    return {
+        "part": {
+            "id": part.id,
+            "part_number": part.part_number,
+            "name": part.name,
+            "unit": part.unit,
+            "location": part.location,
+        },
+        "current_quantity": float(snapshot.quantity) if snapshot else 0,
+        "total": len(entries),
+        "entries": list(reversed(entries[-limit:])),
+    }
 
 
 STALE_DAYS_DEFAULT = 180

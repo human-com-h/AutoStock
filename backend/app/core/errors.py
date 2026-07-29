@@ -97,6 +97,16 @@ def success_body(data: Any = None, server_rev: int | None = None) -> dict[str, A
     return body
 
 
+def _json_safe_validation_detail(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _json_safe_validation_detail(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_validation_detail(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
@@ -105,7 +115,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    details = {"errors": exc.errors()}
+    details = {"errors": _json_safe_validation_detail(exc.errors())}
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=error_body("VALIDATION_ERROR", "请求参数不正确，请检查后重试", details),

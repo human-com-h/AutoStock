@@ -22,5 +22,8 @@ def dashboard(
 
 
 @router.get("/rankings")
-def rankings(db: Session = Depends(get_db)):
-    return success_body(data=report_service.rankings(db))
+def rankings(
+    days: int = Query(default=30, ge=1, le=366),
+    db: Session = Depends(get_db),
+):
+    return success_body(data=report_service.rankings(db, days))

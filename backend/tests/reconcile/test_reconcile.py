@@ -85,3 +85,46 @@ def test_reconcile_reports_intentional_mismatch(app_client, db_path):
     assert count == 1
     assert mismatches[0].part_id == part.id
     assert mismatches[0].difference == Decimal("2.000")
+
+
+def test_order_ledger_semantic_audit_detects_wrong_void_direction(app_client, db_path):
+    part = app_client.post(
+        "/api/parts",
+        json={
+            "part_number": "REC-DIRECTION",
+            "name": "方向对账零件",
+            "unit": "件",
+            "purchase_price": 500,
+            "sale_price": 800,
+        },
+    ).json()["data"]
+    purchase = app_client.post(
+        "/api/orders/purchases",
+        json={"items": [{"part_id": part["id"], "quantity": 5, "purchase_price": 500}]},
+    ).json()["data"]
+    purchase_return = app_client.post(
+        f"/api/orders/purchases/{purchase['id']}/returns",
+        json={"items": [{"part_id": part["id"], "quantity": 2}]},
+    ).json()["data"]
+    assert app_client.post(
+        f"/api/orders/purchases/{purchase_return['id']}/void"
+    ).status_code == 200
+
+    module = _load_reconcile_module()
+    assert module.audit_order_ledger_directions(db_path) == []
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        connection.execute(
+            """
+            UPDATE stock_ledger
+            SET quantity = -ABS(quantity)
+            WHERE source_type = 'purchase_item_void'
+            """
+        )
+        connection.commit()
+
+    mismatches = module.audit_order_ledger_directions(db_path)
+    assert len(mismatches) == 1
+    assert mismatches[0].order_type == "purchase_return"
+    assert mismatches[0].actual_quantity == Decimal("-2")
+    assert mismatches[0].expected_quantity == Decimal("2")

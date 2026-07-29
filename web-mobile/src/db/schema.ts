@@ -134,6 +134,55 @@ export interface NamedRow extends BusinessRow {
   [key: string]: unknown;
 }
 
+export interface PrintCustomField {
+  label: string;
+  value: string;
+  visible: boolean;
+  handwritten: boolean;
+}
+
+export interface MobilePrintSettings {
+  shop_name: string;
+  default_unit: string;
+  allow_negative_stock: boolean;
+  stale_days: number;
+  shop_phone: string;
+  shop_address: string;
+  business_scope: string;
+  print_notice: string;
+  print_warehouse: string;
+  print_operator: string;
+  settlement_method: string;
+  print_payment_account: string;
+  print_wechat: string;
+  print_warranty_period: string;
+  print_reviewer: string;
+  print_custom_fields: PrintCustomField[];
+}
+
+export const DEFAULT_MOBILE_PRINT_SETTINGS: MobilePrintSettings = {
+  shop_name: "AutoStock 汽配店",
+  default_unit: "个",
+  allow_negative_stock: true,
+  stale_days: 180,
+  shop_phone: "",
+  shop_address: "",
+  business_scope: "",
+  print_notice: "商品如有质量问题，请及时联系我们处理。",
+  print_warehouse: "主仓库",
+  print_operator: "管理员",
+  settlement_method: "现结",
+  print_payment_account: "",
+  print_wechat: "",
+  print_warranty_period: "",
+  print_reviewer: "",
+  print_custom_fields: [
+    { label: "运输方式", value: "", visible: true, handwritten: true },
+    { label: "运费承担", value: "", visible: true, handwritten: true },
+    { label: "物流单号", value: "", visible: true, handwritten: true },
+  ],
+};
+
 class AutoStockMobileDB extends Dexie {
   parts!: EntityTable<PartRow, "id">;
   stockSnapshot!: EntityTable<StockSnapshotRow, "part_id">;
@@ -194,4 +243,21 @@ export async function getMeta(key: string): Promise<string | null> {
 
 export async function setMeta(key: string, value: string): Promise<void> {
   await db.meta.put({ key, value });
+}
+
+export async function getPrintSettings(): Promise<MobilePrintSettings> {
+  const raw = await getMeta("print_settings");
+  if (!raw) return structuredClone(DEFAULT_MOBILE_PRINT_SETTINGS);
+  try {
+    const saved = JSON.parse(raw) as Partial<MobilePrintSettings>;
+    return {
+      ...structuredClone(DEFAULT_MOBILE_PRINT_SETTINGS),
+      ...saved,
+      print_custom_fields: Array.isArray(saved.print_custom_fields)
+        ? saved.print_custom_fields.slice(0, 5)
+        : structuredClone(DEFAULT_MOBILE_PRINT_SETTINGS.print_custom_fields),
+    };
+  } catch {
+    return structuredClone(DEFAULT_MOBILE_PRINT_SETTINGS);
+  }
 }

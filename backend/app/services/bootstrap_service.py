@@ -9,6 +9,7 @@ from app.core.time import business_now
 from app.models.master_data import Brand, Category, Customer, Part, Supplier
 from app.models.orders import PurchaseItem, PurchaseOrder, SalesItem, SalesOrder
 from app.models.stock import StockLedger, StockSnapshot
+from app.services.settings_service import get_public_settings
 
 
 def parts_page(db: Session, offset: int, limit: int) -> dict:
@@ -60,6 +61,11 @@ def master_data(db: Session) -> dict:
         "brands": [dump(row) for row in _active_rows(db, Brand)],
         "categories": [dump(row) for row in _active_rows(db, Category)],
     }
+
+
+def mobile_settings(db: Session) -> dict:
+    """返回手机离线预览需要的业务与打印设置。"""
+    return get_public_settings(db)
 
 
 def _active_rows(db: Session, model) -> list:

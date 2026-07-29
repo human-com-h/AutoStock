@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import func, select
@@ -18,7 +18,8 @@ from app.models.orders import PurchaseItem, PurchaseOrder, SalesItem, SalesOrder
 from app.models.stock import StockLedger, StockSnapshot
 from app.models.sync import ChangeSeq, Device, SyncConflict, SyncLog
 from app.schemas.sync import SyncChange
-from app.services.stock_service import append_ledger_entry
+from app.services.settings_service import get_allow_negative_stock
+from app.services.stock_service import append_ledger_entry, check_available_stock
 from app.sync.change_seq import next_rev
 
 MASTER_MODELS = {
@@ -58,6 +59,91 @@ _PRIORITY = {
     **{name: 30 for name in ITEM_MODELS},
     "stock_ledger": 40,
 }
+_SYNC_ORDER_LEDGER_RULES = {
+    "purchase": ("purchase", Decimal("1")),
+    "purchase_return": ("purchase_return", Decimal("-1")),
+    "sale": ("sale", Decimal("-1")),
+    "sale_return": ("sale_return", Decimal("1")),
+}
+
+
+def _sync_order_group_key(change: SyncChange) -> tuple[str, str] | None:
+    if change.table == "purchase_order":
+        return ("purchase", str(change.row.get("id") or ""))
+    if change.table == "sales_order":
+        return ("sales", str(change.row.get("id") or ""))
+    if change.table == "purchase_item":
+        return ("purchase", str(change.row.get("order_id") or ""))
+    if change.table == "sales_item":
+        return ("sales", str(change.row.get("order_id") or ""))
+    return None
+
+
+def _group_sync_changes(
+    changes: list[SyncChange],
+) -> list[list[tuple[int, SyncChange]]]:
+    indexed = list(enumerate(changes))
+    item_groups = {
+        str(change.row.get("id") or ""): key
+        for _index, change in indexed
+        if (key := _sync_order_group_key(change)) is not None
+        and change.table in ITEM_MODELS
+    }
+    grouped: dict[tuple[str, str], list[tuple[int, SyncChange]]] = {}
+    assigned: set[int] = set()
+
+    for index, change in indexed:
+        key = _sync_order_group_key(change)
+        if key is None and change.table == "stock_ledger":
+            key = item_groups.get(str(change.row.get("source_id") or ""))
+        if key is None:
+            continue
+        grouped.setdefault(key, []).append((index, change))
+        assigned.add(index)
+
+    units = list(grouped.values())
+    units.extend([[(index, change)] for index, change in indexed if index not in assigned])
+    for unit in units:
+        unit.sort(key=lambda item: (_PRIORITY.get(item[1].table, 99), item[0]))
+    units.sort(
+        key=lambda unit: (
+            min(_PRIORITY.get(change.table, 99) for _index, change in unit),
+            min(index for index, _change in unit),
+        )
+    )
+    return units
+
+
+def _validate_sync_order_group(unit: list[tuple[int, SyncChange]]) -> None:
+    tables = {change.table for _index, change in unit}
+    order_tables = tables & ORDER_MODELS.keys()
+    item_tables = tables & ITEM_MODELS.keys()
+    if not order_tables and not item_tables:
+        return
+    if len(order_tables) != 1 or len(item_tables) != 1:
+        raise ValueError("移动端单据必须连同主表、明细和库存流水完整上传")
+
+    order_table = next(iter(order_tables))
+    item_table = next(iter(item_tables))
+    expected_item_table = "purchase_item" if order_table == "purchase_order" else "sales_item"
+    if item_table != expected_item_table:
+        raise ValueError("移动端单据主表与明细类型不一致")
+
+    orders = [change for _index, change in unit if change.table == order_table]
+    items = [change for _index, change in unit if change.table == item_table]
+    ledgers = [change for _index, change in unit if change.table == "stock_ledger"]
+    if len(orders) != 1 or not items or len(ledgers) != len(items):
+        raise ValueError("移动端单据必须包含一张主表、至少一条明细及逐条库存流水")
+
+    order_id = str(orders[0].row.get("id") or "")
+    item_ids = [str(change.row.get("id") or "") for change in items]
+    if any(str(change.row.get("order_id") or "") != order_id for change in items):
+        raise ValueError("移动端单据明细关联的主表不一致")
+    if len(item_ids) != len(set(item_ids)):
+        raise ValueError("移动端单据包含重复明细")
+    ledger_sources = [str(change.row.get("source_id") or "") for change in ledgers]
+    if sorted(ledger_sources) != sorted(item_ids):
+        raise ValueError("移动端单据明细与库存流水不是一一对应")
 
 
 def _now() -> str:
@@ -302,6 +388,12 @@ def _next_order_number(db: Session, model: Any, order_no: str) -> str:
     return candidate
 
 
+def _nonnegative_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field_name} 必须是大于等于 0 的整数分")
+    return value
+
+
 def _apply_order_change(
     db: Session,
     change: SyncChange,
@@ -316,6 +408,34 @@ def _apply_order_change(
     order_no = str(remote.get("order_no") or "").strip()
     if not order_no:
         raise ValueError("单号不能为空")
+    allowed_types = (
+        {"purchase", "purchase_return"}
+        if model is PurchaseOrder
+        else {"sale", "sale_return"}
+    )
+    if remote.get("order_type") not in allowed_types:
+        raise ValueError("单据业务类型无效")
+    try:
+        datetime.strptime(str(remote.get("order_date") or ""), "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("单据日期必须是 YYYY-MM-DD") from exc
+    _nonnegative_int(remote.get("total_amount"), "单据总额")
+    if model is PurchaseOrder:
+        _nonnegative_int(remote.get("paid_amount"), "已付金额")
+        partner_id = remote.get("supplier_id")
+        if partner_id and db.get(Supplier, partner_id) is None:
+            raise ValueError("采购单关联供应商不存在")
+    else:
+        _nonnegative_int(remote.get("received_amount"), "已收金额")
+        partner_id = remote.get("customer_id")
+        if partner_id and db.get(Customer, partner_id) is None:
+            raise ValueError("销售单关联客户不存在")
+    if remote.get("reversed_by") is not None:
+        raise ValueError("手机端不能直接写入单据红冲关系")
+    source_order_id = remote.get("source_order_id")
+    if source_order_id and db.get(model, source_order_id) is None:
+        raise ValueError("退货/红冲单关联的来源单据不存在")
+
     renamed = _next_order_number(db, model, order_no)
     conflict: dict[str, Any] | None = None
     if renamed != order_no:
@@ -358,14 +478,79 @@ def _apply_item_change(
     if remote.get("part_id") in merge_map:
         remote["part_id"] = merge_map[remote["part_id"]]
     parent_model = PurchaseOrder if model is PurchaseItem else SalesOrder
-    if db.get(parent_model, remote.get("order_id")) is None:
+    parent = db.get(parent_model, remote.get("order_id"))
+    if parent is None:
         raise ValueError("关联单据不存在")
+    allowed_types = (
+        {"purchase", "purchase_return"}
+        if model is PurchaseItem
+        else {"sale", "sale_return"}
+    )
+    if parent.order_type not in allowed_types:
+        raise ValueError("单据主表与明细类型不一致")
     part = db.get(Part, remote.get("part_id"))
-    if part is None or part.merged_into is not None:
-        raise ValueError("关联零件不存在或已合并")
+    if (
+        part is None
+        or part.merged_into is not None
+        or part.is_deleted
+        or not part.is_active
+    ):
+        raise ValueError("关联零件不存在、已停用或已合并")
+    duplicate = db.execute(
+        select(model.id).where(
+            model.order_id == parent.id,
+            model.part_id == part.id,
+            model.is_deleted == 0,
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise ValueError("同一张单据中不能重复添加同一零件")
+
+    try:
+        quantity = Decimal(str(remote.get("quantity")))
+    except InvalidOperation as exc:
+        raise ValueError("单据数量格式无效") from exc
+    if quantity <= 0 or quantity.as_tuple().exponent < -3:
+        raise ValueError("单据数量必须大于 0 且最多保留三位小数")
+    price_field = "purchase_price" if model is PurchaseItem else "sale_price"
+    price = _nonnegative_int(remote.get(price_field), "单价")
+    amount = _nonnegative_int(remote.get("amount"), "明细金额")
+    expected_amount = int(
+        (quantity * price).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    if amount != expected_amount:
+        raise ValueError("单据明细金额与数量、单价不一致")
+    if model is SalesItem:
+        _nonnegative_int(remote.get("cost_amount"), "成本金额")
+
     created = model(**_external_fields(db, model, remote, device.id))
     db.add(created)
     db.flush()
+
+
+def _validate_applied_order_total(
+    db: Session,
+    unit: list[tuple[int, SyncChange]],
+) -> None:
+    for _index, change in unit:
+        if change.table == "purchase_order":
+            order = db.get(PurchaseOrder, change.row.get("id"))
+            item_model = PurchaseItem
+        elif change.table == "sales_order":
+            order = db.get(SalesOrder, change.row.get("id"))
+            item_model = SalesItem
+        else:
+            continue
+        if order is None:
+            raise ValueError("同步单据主表未写入")
+        item_total = db.execute(
+            select(func.coalesce(func.sum(item_model.amount), 0)).where(
+                item_model.order_id == order.id,
+                item_model.is_deleted == 0,
+            )
+        ).scalar_one()
+        if int(item_total) != order.total_amount:
+            raise ValueError("单据总额与明细金额合计不一致")
 
 
 def _apply_ledger_change(
@@ -382,15 +567,54 @@ def _apply_ledger_change(
     part = db.get(Part, remote.get("part_id"))
     if part is None or part.merged_into is not None:
         raise ValueError("库存流水关联零件不存在或已合并")
+    source_type = remote.get("source_type")
+    if source_type == "purchase_item":
+        item = db.get(PurchaseItem, remote.get("source_id"))
+        parent = db.get(PurchaseOrder, item.order_id) if item is not None else None
+    elif source_type == "sales_item":
+        item = db.get(SalesItem, remote.get("source_id"))
+        parent = db.get(SalesOrder, item.order_id) if item is not None else None
+    else:
+        raise ValueError("手机端库存流水来源类型无效")
+    if item is None or parent is None:
+        raise ValueError("库存流水关联的单据明细不存在")
+    if item.part_id != remote["part_id"]:
+        raise ValueError("库存流水与单据明细关联的零件不一致")
+
+    rule = _SYNC_ORDER_LEDGER_RULES.get(parent.order_type)
+    if rule is None:
+        raise ValueError("库存流水关联的单据业务类型无效")
+    expected_change_type, direction = rule
+    try:
+        quantity = Decimal(str(remote["quantity"]))
+    except (InvalidOperation, KeyError) as exc:
+        raise ValueError("库存流水数量格式无效") from exc
+    expected_quantity = direction * Decimal(str(item.quantity))
+    if remote.get("change_type") != expected_change_type or quantity != expected_quantity:
+        raise ValueError("库存流水方向或数量与单据明细不一致")
+    if quantity < 0 and not get_allow_negative_stock(db):
+        if check_available_stock(db, part.id, -quantity) < 0:
+            raise BusinessAppError(
+                f"零件「{part.name}」库存不足，无法同步出库",
+                code="BUSINESS_STOCK_INSUFFICIENT",
+            )
+
+    unit_cost = int(remote.get("unit_cost") or 0)
+    if source_type == "purchase_item":
+        unit_cost = item.purchase_price if quantity > 0 else unit_cost
+    elif unit_cost == 0:
+        snapshot = db.get(StockSnapshot, part.id)
+        unit_cost = snapshot.avg_cost if snapshot is not None else 0
+
     remote["device_id"] = device.id
     entry = append_ledger_entry(
         db,
         part_id=remote["part_id"],
         change_type=remote["change_type"],
-        quantity=Decimal(str(remote["quantity"])),
-        source_type=remote["source_type"],
+        quantity=quantity,
+        source_type=source_type,
         source_id=remote["source_id"],
-        unit_cost=int(remote.get("unit_cost") or 0),
+        unit_cost=unit_cost,
         remark=remote.get("remark"),
         occurred_at=remote.get("occurred_at"),
         external_row=remote,
@@ -398,11 +622,19 @@ def _apply_ledger_change(
     if entry is None:
         return
     if entry.source_type == "sales_item":
-        item = db.get(SalesItem, entry.source_id)
-        if item is not None:
-            item.cost_amount = round(abs(float(item.quantity)) * entry.unit_cost)
-            item.rev = next_rev(db)
-            item.version += 1
+        item.cost_amount = int(
+            (abs(Decimal(str(item.quantity))) * entry.unit_cost).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+        bump_version(db, item)
+        if part.sale_price != item.sale_price:
+            part.sale_price = item.sale_price
+            bump_version(db, part)
+    elif entry.source_type == "purchase_item" and part.purchase_price != item.purchase_price:
+        part.purchase_price = item.purchase_price
+        bump_version(db, part)
     db.flush()
 
 
@@ -456,35 +688,37 @@ def push_changes(
     rejected: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
     merge_map: dict[str, str] = {}
-    ordered = sorted(
-        enumerate(changes),
-        key=lambda item: (_PRIORITY.get(item[1].table, 99), item[0]),
-    )
+    units = _group_sync_changes(changes)
 
     try:
-        for _index, change in ordered:
-            row_id = change.row.get("id", "")
+        for unit in units:
+            unit_conflicts: list[dict[str, Any]] = []
             try:
                 with db.begin_nested():
-                    conflict = _apply_change(
-                        db,
-                        change,
-                        device,
-                        received_at,
-                        merge_map,
-                    )
+                    _validate_sync_order_group(unit)
+                    for _index, change in unit:
+                        conflict = _apply_change(
+                            db,
+                            change,
+                            device,
+                            received_at,
+                            merge_map,
+                        )
+                        if conflict is not None:
+                            unit_conflicts.append(conflict)
+                    _validate_applied_order_total(db, unit)
                     db.flush()
-                accepted += 1
-                if conflict is not None:
-                    conflicts.append(conflict)
+                accepted += len(unit)
+                conflicts.extend(unit_conflicts)
             except (ValueError, KeyError, TypeError, IntegrityError, BusinessAppError) as exc:
-                rejected.append(
-                    {
-                        "table": change.table,
-                        "id": row_id,
-                        "reason": str(exc),
-                    }
-                )
+                for _index, change in unit:
+                    rejected.append(
+                        {
+                            "table": change.table,
+                            "id": change.row.get("id", ""),
+                            "reason": str(exc),
+                        }
+                    )
 
         device.last_sync_at = _now()
         bump_version(db, device)
